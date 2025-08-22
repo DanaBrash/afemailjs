@@ -3,6 +3,8 @@ data "azurerm_client_config" "current" {}
 output "resource_group"          { value = azurerm_resource_group.rg.name }
 output "function_app_name"       { value = azurerm_linux_function_app.func.name }
 output "function_default_hostname" { value = azurerm_linux_function_app.func.default_hostname }
+output "uami_client_id"  { value = azurerm_user_assigned_identity.uami.client_id }
+output "uami_principal_id" { value = azurerm_user_assigned_identity.uami.principal_id }
 
 # OIDC outputs (only if enabled)
 output "deploy_oidc_client_id" {
