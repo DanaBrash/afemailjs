@@ -1,0 +1,66 @@
+name: Deploy Infra (Terraform)
+
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "infra/**" ]
+  pull_request:
+    paths: [ "infra/**" ]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_WORKING_DIR: infra
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform plan -out=tfplan
+
+      # apply only on main
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve tfplan
+
+      # Export outputs for downstream jobs (optional)
+      - name: Export TF outputs
+        if: github.ref == 'refs/heads/main'
+        id: tfout
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          echo "FUNC_NAME=$(terraform output -raw function_app_name)" >> $GITHUB_OUTPUT
+          echo "RG_NAME=$(terraform output -raw resource_group)" >> $GITHUB_OUTPUT
+
+      - name: Save outputs artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tf-outputs
+          path: |
+            ${{ env.TF_WORKING_DIR }}/.terraform
+          if-no-files-found: ignore
