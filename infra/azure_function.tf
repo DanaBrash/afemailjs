@@ -47,7 +47,7 @@ resource "azuread_application_registration" "gh" {
 }
 
 resource "azuread_service_principal" "gh" {
-  count     = var.enable_oidc ? 1 : 0
+  count     = var.enable_pr_oidc ? 1 : 0
   client_id = azuread_application_registration.gh.client_id
 }
 
@@ -61,7 +61,7 @@ resource "azuread_application_federated_identity_credential" "gh" {
 }
 
 resource "azurerm_role_assignment" "gh_contrib_rg" {
-  count                = var.enable_oidc ? 1 : 0
+  count                = var.enable_pr_oidc ? 1 : 0
   scope                = azurerm_resource_group.rg.id
   role_definition_name = "Contributor"
   principal_id         = azuread_service_principal.gh[0].object_id
