@@ -17,7 +17,10 @@ resource "azurerm_linux_function_app" "func" {
 
   functions_extension_version = "~4"
 
-  identity { type = "SystemAssigned" }
+  identity {
+    type         = "SystemAssigned, UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.uami.id]
+  }
 
   site_config {
     application_stack { node_version = "20" }
@@ -33,6 +36,7 @@ resource "azurerm_linux_function_app" "func" {
     EMAILJS_USER_ID          = var.emailjs_user_id
     EMAILJS_PRIVATE_KEY      = var.emailjs_private_key
     ALLOWED_ORIGINS          = join(",", var.allowed_origins)
+    AZURE_CLIENT_ID          = azurerm_user_assigned_identity.uami.client_id
   }
 }
 
@@ -57,8 +61,8 @@ resource "azuread_application_federated_identity_credential" "gh" {
 }
 
 resource "azurerm_role_assignment" "gh_contrib_rg" {
-  count               = var.enable_oidc ? 1 : 0
-  scope               = azurerm_resource_group.rg.id
+  count                = var.enable_oidc ? 1 : 0
+  scope                = azurerm_resource_group.rg.id
   role_definition_name = "Contributor"
-  principal_id        = azuread_service_principal.gh[0].object_id
+  principal_id         = azuread_service_principal.gh[0].object_id
 }
