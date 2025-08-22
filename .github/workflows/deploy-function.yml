@@ -1,18 +1,10 @@
 name: Deploy Azure Function
 
 on:
-  # Deploy only after merge to main
-  push:
-    branches: [ "main" ]
-    paths:
-      - "function/**"
-      - ".github/workflows/deploy-function.yml"
-  # PRs run build-only checks (no Azure login / no deploy)
-  pull_request:
-    branches: [ "main" ]
-    paths:
-      - "function/**"
-      - ".github/workflows/deploy-function.yml"
+  # Run this ONLY after Terraform (infra) finishes successfully
+  workflow_run:
+    workflows: [ "Terraform (infra)" ]   # must match the 'name:' in deploy-infra.yml
+    types: [ completed ]
   workflow_dispatch:
 
 permissions:
@@ -29,36 +21,15 @@ env:
   WORKING_DIR: 'function'
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Use Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
-
-      - name: Install deps
-        working-directory: ${{ env.WORKING_DIR }}
-        run: npm ci
-
-      # Add tests/lint here if you have them
-      # - name: Test
-      #   working-directory: ${{ env.WORKING_DIR }}
-      #   run: npm test --if-present
-
   deploy:
-    # Only deploy on push to main (never on pull_request)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    # Only proceed if Terraform workflow concluded SUCCESS
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout same commit Terraform ran against
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Use Node ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
@@ -76,10 +47,14 @@ jobs:
       - name: Azure login (OIDC via tf-deployer)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}            # tf-deployer app (client) ID
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}            # your tenant ID
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}# your subscription ID
-
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}             # tf-deployer app (client) ID
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}             # your tenant ID
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }} # your subscription ID
+          enable-AzPSSession: true  # needed for az account show
+          environment: 'AzureCloud' # or 'AzureUSGovernment' etc.
+          allow-no-subscriptions: true
+          audience: api://AzureADTokenExchange
+          auth-type: SERVICE_PRINCIPAL
       - name: Who am I (sanity check)
         run: az account show --query "{sub:id, tenant:tenantId}" -o table
 
