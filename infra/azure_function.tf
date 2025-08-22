@@ -6,7 +6,6 @@ resource "azurerm_service_plan" "plan" {
   sku_name            = "Y1" # Linux Consumption
 }
 
-
 resource "azurerm_linux_function_app" "func" {
   name                       = module.naming.function_app.name
   resource_group_name        = azurerm_resource_group.rg.name
@@ -40,29 +39,3 @@ resource "azurerm_linux_function_app" "func" {
   }
 }
 
-resource "azuread_application_registration" "gh" {
-  display_name     = "${module.naming.function_app.name}-appreg"
-  description      = "EmailJS Function App Registration"
-  sign_in_audience = "AzureADMyOrg"
-}
-
-resource "azuread_service_principal" "gh" {
-  count     = var.enable_pr_oidc ? 1 : 0
-  client_id = azuread_application_registration.gh.client_id
-}
-
-resource "azuread_application_federated_identity_credential" "gh" {
-  application_id = azuread_application_registration.gh.id
-  display_name   = "my-repo-deploy"
-  description    = "Deployments for my-repo"
-  audiences      = ["api://AzureADTokenExchange"]
-  issuer         = "https://token.actions.githubusercontent.com"
-  subject        = "repo:my-organization/my-repo:environment:prod"
-}
-
-resource "azurerm_role_assignment" "gh_contrib_rg" {
-  count                = var.enable_pr_oidc ? 1 : 0
-  scope                = azurerm_resource_group.rg.id
-  role_definition_name = "Contributor"
-  principal_id         = azuread_service_principal.gh[0].object_id
-}
