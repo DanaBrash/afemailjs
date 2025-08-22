@@ -19,3 +19,15 @@ output "deploy_subscription_id" {
   value       = data.azurerm_client_config.current.subscription_id
   description = "Use as AZURE_SUBSCRIPTION_ID"
 }
+
+output "tf_deployer_object_id" {
+  value = data.azuread_service_principal.tf_deployer.object_id
+}
+
+output "fic_subject_main" {
+  value = "repo:${var.github_owner}/${var.github_repo}:ref:refs/heads/${var.github_main_branch}"
+}
+
+output "fic_subject_pr" {
+  value = var.enable_pr_oidc ? "repo:${var.github_owner}/${var.github_repo}:pull_request" : null
+}
