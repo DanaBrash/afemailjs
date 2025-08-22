@@ -1,66 +1,83 @@
-name: Deploy Infra (Terraform)
+name: Terraform (infra)
 
 on:
+  # Apply only after merge to main
   push:
     branches: [ "main" ]
-    paths: [ "infra/**" ]
+    paths:
+      - "infra/**"
+      - ".github/workflows/deploy-infra.yml"
+  # PRs run fmt/validate only (no Azure login)
   pull_request:
-    paths: [ "infra/**" ]
+    branches: [ "main" ]
+    paths:
+      - "infra/**"
+      - ".github/workflows/deploy-infra.yml"
   workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: infra-terraform
+  cancel-in-progress: true
+
 env:
-  TF_WORKING_DIR: infra
+  TF_IN_AUTOMATION: 'true'
+  WORKING_DIR: 'infra'
 
 jobs:
-  terraform:
+  validate:
+    # PR-only job: no Azure login to avoid AADSTS700213
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.6.6
+          terraform_version: 1.9.5
+
+      - name: Terraform fmt
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform fmt -check
+
+      # Validate without hitting remote backend (works offline on PRs)
+      - name: Terraform init (no backend)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform validate
+
+  apply:
+    # Only apply on push to main
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC via tf-deployer)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}              # tf-deployer app (client) ID
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}              # your tenant ID
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}  # your subscription ID
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
 
       - name: Terraform Init
-        working-directory: ${{ env.TF_WORKING_DIR }}
+        working-directory: ${{ env.WORKING_DIR }}
         run: terraform init
 
-      - name: Terraform Plan
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform plan -out=tfplan
-
-      # apply only on main
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main'
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform apply -auto-approve tfplan
-
-      # Export outputs for downstream jobs (optional)
-      - name: Export TF outputs
-        if: github.ref == 'refs/heads/main'
-        id: tfout
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          echo "FUNC_NAME=$(terraform output -raw function_app_name)" >> $GITHUB_OUTPUT
-          echo "RG_NAME=$(terraform output -raw resource_group)" >> $GITHUB_OUTPUT
-
-      - name: Save outputs artifact
-        if: github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: tf-outputs
-          path: |
-            ${{ env.TF_WORKING_DIR }}/.terraform
-          if-no-files-found: ignore
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform apply -auto-approve
