@@ -18,7 +18,6 @@ dist/
 
 # macOS / VSCode
 .DS_Store
-.vscode/
 
 # Node modules
 node_modules/
@@ -43,7 +42,7 @@ __azurite_db*__.queue
 __azurite_db*__.table
 
 # VSCode
-.vscode/
+
 *.code-workspace
 
 # Logs

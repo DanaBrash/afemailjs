@@ -47,7 +47,7 @@ jobs:
       - name: Azure login (OIDC via tf-deployer)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}             # tf-deployer app (client) ID
+          client-id:  ${{ secrets.AZURE_CLIENT_ID }}             # tf-deployer app (client) ID
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}             # your tenant ID
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }} # your subscription ID
           enable-AzPSSession: true  # needed for az account show
