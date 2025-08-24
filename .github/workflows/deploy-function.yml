@@ -65,7 +65,7 @@ jobs:
       - name: Install production deps
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          npm ci
+          npm ci --omit=dev
           npm prune --omit=dev
       
       - name: Update Az PowerShell module
