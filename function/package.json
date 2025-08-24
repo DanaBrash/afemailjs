@@ -5,7 +5,8 @@
   "description": "Azure Functions HTTP endpoint that sends mail via EmailJS",
   "type": "commonjs",
   "engines": {
-    "node": ">=20 <21"
+  "node": ">=20 <21",
+  "main": "index.js"
   },
   "scripts": {
     "start": "func start",
