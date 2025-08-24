@@ -1,11 +1,28 @@
 name: Deploy Azure Function
 
 on:
-  # Run this ONLY after Terraform (infra) finishes successfully
+  # Run this ONLY after Terraform (infra) finishes
   workflow_run:
-    workflows: [ "Terraform (infra)" ]   # must match the 'name:' in deploy-infra.yml
-    types: [ completed ]
+    workflows: ["Terraform (infra)"]   # must match the 'name:' in your infra workflow
+    types: [completed]
+
+  # Manual button
   workflow_dispatch:
+    inputs:
+      app_name:
+        description: "Function App name (defaults to env var)"
+        required: false
+      package_path:
+        description: "Path to function project (folder with host.json)"
+        required: false
+        default: "function"
+
+  # Auto-trigger on function code changes
+  push:
+    branches: [main]
+    paths:
+      - "function/**"
+      - ".github/workflows/deploy-function.yml"
 
 permissions:
   id-token: write
