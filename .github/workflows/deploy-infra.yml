@@ -71,12 +71,12 @@ jobs:
 
       - name: Configure GitHub PAT for private modules
         run: |
-          echo "machine github.com login buildactor password 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" > ~/.netrc
+          echo "machine github.com login buildactor password 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" > ~/.netrc
           chmod 600 ~/.netrc
 
       - name: Preflight GitHub auth (API)
         run: |
-          PAT="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"
+          PAT="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"
           PAT="${PAT%$'\r'}"; PAT="${PAT%$'\n'}"  # trim CR/LF just in case
           code=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer ${PAT}" \
@@ -87,7 +87,7 @@ jobs:
     
       - name: Preflight GitHub auth (git)
         run: |
-          header=$(printf "x-access-token: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" | base64 -w0 2>/dev/null || printf "x-access-token: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" | base64)
+          header=$(printf "x-access-token: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" | base64 -w0 2>/dev/null || printf "x-access-token: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" | base64)
           git -c http.extraheader="Authorization: Basic $header" \
               ls-remote https://github.com/DanaBrash/calabashNaming.git
 
