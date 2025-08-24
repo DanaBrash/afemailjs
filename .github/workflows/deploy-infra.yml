@@ -81,13 +81,13 @@ jobs:
             https://api.github.com/repos/DanaBrash/calabashNaming)
           echo "HTTP $code"
           test "$code" -eq 200
-
+     
       - name: Preflight GitHub auth (git)
         run: |
-          header=$(printf ":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" | base64)
-          git -c http.extraheader="AUTHORIZATION: basic $header" \
+          header=$(printf "x-access-token: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" | base64 -w0 2>/dev/null || printf "x-access-token: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" | base64)
+          git -c http.extraheader="Authorization: Basic $header" \
               ls-remote https://github.com/DanaBrash/calabashNaming.git
-             
+
       # - name: Preflight GitHub auth
       #   run: |
       #     git ls-remote https://github.com/DanaBrash/calabashNaming.git
