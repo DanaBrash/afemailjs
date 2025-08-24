@@ -67,6 +67,11 @@ jobs:
         run: |
           npm ci
           npm prune --omit=dev
+      
+      - name: Update Az PowerShell module
+        shell: pwsh
+        run: |
+          Install-Module Az -Force -Scope CurrentUser
 
       - name: Azure login (OIDC via tf-deployer)
         uses: azure/login@v2
@@ -79,6 +84,7 @@ jobs:
           allow-no-subscriptions: true
           audience: api://AzureADTokenExchange
           auth-type: SERVICE_PRINCIPAL
+
       - name: Who am I (sanity check)
         run: az account show --query "{sub:id, tenant:tenantId}" -o table
 
