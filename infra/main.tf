@@ -3,8 +3,6 @@ module "naming" {
   suffix = local.suffix
 }
 
-# https://github.com/DanaBrash/calabashNaming
-
 resource "azurerm_resource_group" "rg" {
   name     = module.naming.resource_group.name
   location = local.location
