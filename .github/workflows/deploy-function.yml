@@ -41,9 +41,15 @@ env:
 jobs:
   deploy:
     # Only proceed if Terraform workflow concluded SUCCESS
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
+      - name: Debug trigger
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "from_workflow=${{ github.event.workflow_run.name || 'n/a' }}"
+          echo "conclusion=${{ github.event.workflow_run.conclusion || 'n/a' }}"
+
       - name: Checkout same commit Terraform ran against
         uses: actions/checkout@v4
         with:
