@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AZURE_FUNCTIONAPP_NAME: afemailsjs-func
+  AZURE_FUNCTIONAPP_NAME: func-mailjs
   NODE_VERSION: '20.x'
   WORKING_DIR: 'function'
 
@@ -58,8 +58,15 @@ jobs:
       - name: Who am I (sanity check)
         run: az account show --query "{sub:id, tenant:tenantId}" -o table
 
-      - name: Deploy to Azure Functions
+      - name: Verify function app exists
+        run: az functionapp show -g rg-mailjs -n func-mailjs
+
+      - name: Deploy functions
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-          package: ${{ env.WORKING_DIR }}
+          package: ./function
+          respect-funcignore: true
+          enable-oryx-build: false
+          scm-do-build-during-deployment: false
+          remote-build: false
