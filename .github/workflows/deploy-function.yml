@@ -15,6 +15,7 @@ concurrency:
   group: function-deploy
   cancel-in-progress: true
 
+  # trigger a refresh of the file in git
 env:
   AZURE_FUNCTIONAPP_NAME: func-mailjs
   NODE_VERSION: '20.x'
