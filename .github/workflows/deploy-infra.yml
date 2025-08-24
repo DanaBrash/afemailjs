@@ -45,14 +45,21 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform fmt -check
 
+      - name: Clean TF cache
+        run: rm -rf "${{ env.WORKING_DIR }}/.terraform" "${{ env.WORKING_DIR }}/.terraform.lock.hcl"
+
       # Validate without hitting remote backend (works offline on PRs)
       - name: Terraform init (no backend)
         working-directory: ${{ env.WORKING_DIR }}
-        run: terraform init -backend=false
+        run: terraform init -backend=false -reconfigure -upgrade
 
       - name: Terraform validate
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform validate
+
+      - name: Terraform plan (speculative)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform plan -no-color -input=false
 
   apply:
     # Only apply on push to main
@@ -69,40 +76,21 @@ jobs:
           tenant-id:   "6dd7381d-4ace-410a-b7f3-011a192ebe60"        # ${{ secrets.AZURE_TENANT_ID }}  your tenant ID
           subscription-id:  "c1b1f12b-41c7-4fb3-b5ac-02e36ce1331e"   # ${{ secrets.AZURE_SUBSCRIPTION_ID }}  your subscription ID
 
-      - name: Configure GitHub PAT for private modules
-        run: |
-          echo "machine github.com login buildactor password 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" > ~/.netrc
-          chmod 600 ~/.netrc
-
-      - name: Preflight GitHub auth (API)
-        run: |
-          PAT="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"
-          PAT="${PAT%$'\r'}"; PAT="${PAT%$'\n'}"  # trim CR/LF just in case
-          code=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${PAT}" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/DanaBrash/calabashNaming)
-          echo "HTTP ${code}"
-          test "${code}" -eq 200
-    
-      - name: Preflight GitHub auth (git)
-        run: |
-          header=$(printf "x-access-token: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" | base64 -w0 2>/dev/null || printf "x-access-token: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" | base64)
-          git -c http.extraheader="Authorization: Basic $header" \
-              ls-remote https://github.com/DanaBrash/calabashNaming.git
-
-      # - name: Preflight GitHub auth
-      #   run: |
-      #     git ls-remote https://github.com/DanaBrash/calabashNaming.git
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
 
+      - name: Terraform fmt
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform fmt -check
+
+      - name: Clean TF cache
+        run: rm -rf "${{ env.WORKING_DIR }}/.terraform" "${{ env.WORKING_DIR }}/.terraform.lock.hcl"
+
       - name: Terraform Init
         working-directory: ${{ env.WORKING_DIR }}
-        run: terraform init -input=false
+        run: terraform init -reconfigure -upgrade -input=false
 
       - name: Terraform Apply
         working-directory: ${{ env.WORKING_DIR }}
