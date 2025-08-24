@@ -65,9 +65,19 @@ jobs:
       - name: Azure login (OIDC via tf-deployer)
         uses: azure/login@v2
         with:
-          client-id:   "bdbc6bec-6f3d-48b9-99e9-6bbcc0ef51f5"        # tf-deployer app (client) ID 
-          tenant-id:   "6dd7381d-4ace-410a-b7f3-011a192ebe60"       # your tenant ID
-          subscription-id:  "c1b1f12b-41c7-4fb3-b5ac-02e36ce1331e"   # your subscription ID
+          client-id:   "bdbc6bec-6f3d-48b9-99e9-6bbcc0ef51f5"        # ${{ secrets.AZURE_CLIENT_ID }}  tf-deployer app (client) ID 
+          tenant-id:   "6dd7381d-4ace-410a-b7f3-011a192ebe60"        # ${{ secrets.AZURE_TENANT_ID }}  your tenant ID
+          subscription-id:  "c1b1f12b-41c7-4fb3-b5ac-02e36ce1331e"   # ${{ secrets.AZURE_SUBSCRIPTION_ID }}  your subscription ID
+
+      - name: Configure GitHub PAT for private modules
+        run: |
+          echo "machine github.com login buildactor password $GH_PAT_READ_MODULES" > ~/.netrc
+          chmod 600 ~/.netrc
+        env:
+          GH_PAT_READ_MODULES: "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" # PAT configured in https://github.com/settings/personal-access-tokens
+      
+      - name: Preflight GitHub auth
+        run: git ls-remote https://github.com/DanaBrash/calabashnaming.git
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
