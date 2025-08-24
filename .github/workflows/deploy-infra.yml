@@ -77,7 +77,7 @@ jobs:
       - name: Preflight GitHub auth (API)
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: token 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" \
+            -H "Authorization: Bearer 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" \
             https://api.github.com/repos/DanaBrash/calabashNaming)
           echo "HTTP $code"
           test "$code" -eq 200
