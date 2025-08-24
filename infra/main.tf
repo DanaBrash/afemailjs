@@ -1,5 +1,5 @@
 module "naming" {
-  source = "git::https://github.com/DanaBrash/calabashnaming.git" # switch back for external tests
+  source =  "git::https://github.com/DanaBrash/calabashnaming.git?ref=main" # switch back for external tests
   suffix = local.suffix
 }
 
