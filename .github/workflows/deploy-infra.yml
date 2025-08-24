@@ -71,13 +71,12 @@ jobs:
 
       - name: Configure GitHub PAT for private modules
         run: |
-          echo "machine github.com login buildactor password $GH_PAT_READ_MODULES" > ~/.netrc
+          echo "machine github.com login buildactor password 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" > ~/.netrc
           chmod 600 ~/.netrc
-        env:
-          GH_PAT_READ_MODULES: "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" # PAT configured in https://github.com/settings/personal-access-tokens
-      
+
       - name: Preflight GitHub auth
-        run: git ls-remote https://github.com/DanaBrash/calabashnaming.git
+        run: |
+          git ls-remote https://github.com/DanaBrash/calabashNaming.git
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -86,8 +85,8 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.WORKING_DIR }}
-        run: terraform init
+        run: terraform init -input=false
 
       - name: Terraform Apply
         working-directory: ${{ env.WORKING_DIR }}
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve -input=false
