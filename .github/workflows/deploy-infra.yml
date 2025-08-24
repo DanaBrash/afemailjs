@@ -79,11 +79,15 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.5
+          terraform_version: 1.13.x
 
-      - name: Terraform fmt
+      - name: Terraform fmt (auto)
         working-directory: ${{ env.WORKING_DIR }}
-        run: terraform fmt -check
+        run: terraform fmt -recursive
+
+      - name: Terraform fmt (check)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform fmt -check -recursive -diff
 
       - name: Clean TF cache
         run: rm -rf "${{ env.WORKING_DIR }}/.terraform" "${{ env.WORKING_DIR }}/.terraform.lock.hcl"
