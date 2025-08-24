@@ -74,9 +74,23 @@ jobs:
           echo "machine github.com login buildactor password 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" > ~/.netrc
           chmod 600 ~/.netrc
 
-      - name: Preflight GitHub auth
+      - name: Preflight GitHub auth (API)
         run: |
-          git ls-remote https://github.com/DanaBrash/calabashNaming.git
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token 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" \
+            https://api.github.com/repos/DanaBrash/calabashNaming)
+          echo "HTTP $code"
+          test "$code" -eq 200
+
+      - name: Preflight GitHub auth (git)
+        run: |
+          header=$(printf ":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" | base64)
+          git -c http.extraheader="AUTHORIZATION: basic $header" \
+              ls-remote https://github.com/DanaBrash/calabashNaming.git
+             
+      # - name: Preflight GitHub auth
+      #   run: |
+      #     git ls-remote https://github.com/DanaBrash/calabashNaming.git
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
