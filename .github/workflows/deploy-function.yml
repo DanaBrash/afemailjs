@@ -104,6 +104,15 @@ jobs:
         run: |
           test -d function/node_modules && ls -1 function/node_modules | head -n 20 || echo "no node_modules found"
 
+      - name: Show function package contents (pre-deploy)
+        run: |
+          echo "---- function/ tree ----"
+          find function -maxdepth 3 -type f -print | sort
+          echo "---- .funcignore ----"
+          cat function/.funcignore || true
+          echo "---- package.json ----"
+          cat function/package.json
+
       - name: Deploy functions
         uses: Azure/functions-action@v1
         with:
@@ -111,12 +120,20 @@ jobs:
           package: ./function
           respect-funcignore: true
           enable-oryx-build: true
-          
-      - name: Sync triggers
-        run: az functionapp sync-function-triggers -g rg-mailjs -n func-mailjs
-              
+        continue-on-error: true  # still want debugging info below
+
+      - name: Show package contents deployed (pre-deploy check)
+        run: |
+          echo "---- function/ tree (local before deploy) ----"
+          find function -maxdepth 2 -type f -print | sort
+          echo "---- package.json ----"
+          cat function/package.json
+    
+      - name: Restart Function App (forces trigger sync)
+        run: az functionapp restart -g rg-mailjs -n func-mailjs
+
       - name: List functions
         run: az functionapp function list -g rg-mailjs -n func-mailjs --query "[].{Name:name,Url:invokeUrlTemplate}" -o table
-              
-      - name: Tail logs (10s)
-        run: timeout 10s az functionapp log tail -g rg-mailjs -n func-mailjs || true
+
+      - name: Tail logs (15s)
+        run: timeout 15s az functionapp log tail -g rg-mailjs -n func-mailjs || true
