@@ -76,12 +76,15 @@ jobs:
 
       - name: Preflight GitHub auth (API)
         run: |
+          PAT="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"
+          PAT="${PAT%$'\r'}"; PAT="${PAT%$'\n'}"  # trim CR/LF just in case
           code=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer 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" \
+            -H "Authorization: Bearer ${PAT}" \
+            -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/DanaBrash/calabashNaming)
-          echo "HTTP $code"
-          test "$code" -eq 200
-     
+          echo "HTTP ${code}"
+          test "${code}" -eq 200
+    
       - name: Preflight GitHub auth (git)
         run: |
           header=$(printf "x-access-token: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" | base64 -w0 2>/dev/null || printf "x-access-token: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" | base64)
