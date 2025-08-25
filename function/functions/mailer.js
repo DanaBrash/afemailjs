@@ -61,11 +61,16 @@ async function readJsonBody(req, maxBytes = 256 * 1024) {
   }
 }
 
+console.log("templateParams received:", templateParams);
+
 // CHANGE: tiny validator for required fields
 function validateTemplateParams(params) {
-  const { name, email, message } = params || {};
-  if (!name || !email || !message) {
-    throw Object.assign(new Error("name, email, and message are required"), { status: 400 });
+  const { from_name, reply_to, new_mail } = params || {};
+  if (!from_name || !reply_to || !new_mail) {
+    throw Object.assign(
+      new Error("from_name, reply_to, and new_mail are required"),
+      { status: 400 }
+    );
   }
 }
 
