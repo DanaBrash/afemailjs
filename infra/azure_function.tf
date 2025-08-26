@@ -23,7 +23,10 @@ resource "azurerm_linux_function_app" "func" {
 
   site_config {
     application_stack { node_version = "20" }
-    # cors { allowed_origins = ["http://localhost:5173","http://localhost:3000"] } # your code handles CORS
+      cors {
+        allowed_origins     = var.allowed_origins
+        support_credentials = false  # set true ONLY if you use cookies/auth
+      }
   }
 
   app_settings = {
@@ -37,5 +40,7 @@ resource "azurerm_linux_function_app" "func" {
     ALLOWED_ORIGINS          = join(",", var.allowed_origins)
     AZURE_CLIENT_ID          = azurerm_user_assigned_identity.uami.client_id
   }
+
+
 }
 
