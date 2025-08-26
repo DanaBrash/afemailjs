@@ -63,11 +63,12 @@ async function readJsonBody(req, maxBytes = 256 * 1024) {
 
 // CHANGE: tiny validator for required fields
 function validateTemplateParams(params) {
-  const { name, email, message } = params || {};
-  if (!name || !email || !message) {
-    throw Object.assign(new Error("name, email, and message are required"), { status: 400 });
+  const { from_name, reply_to, alias, message } = params || {};
+  if (!from_name || !reply_to || !alias) {
+    throw Object.assign(new Error("name, email, and alias are required"), { status: 400 });
   }
 }
+
 
 // ---- Function (HTTP trigger) ------------------------------------------------
 // Function name is "mailer" (visible in portal/CLI). Route defaults to /api/mailer.
