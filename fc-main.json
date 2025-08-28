@@ -1,0 +1,7 @@
+{
+  "name": "tf-deploy-oidc-main",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:DanaBrash/afemailjs:ref:refs/heads/main",
+  "audiences": ["api://AzureADTokenExchange"],
+  "description": "OIDC for GitHub Actions main branch"
+}

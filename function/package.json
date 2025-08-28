@@ -1,0 +1,22 @@
+{
+  "name": "mail-functions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Azure Functions HTTP endpoint that sends mail via EmailJS",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20 <21"
+  },
+  "main": "index.js",
+  "scripts": {
+    "start": "func start",
+    "test": "echo \"No tests yet\""
+  },
+  "dependencies": {
+    "@azure/functions": "^4.7.2",
+    "axios": "^1.7.0"
+  },
+  "devDependencies": {
+    "azure-functions-core-tools": "^4.0.0"
+  }
+}

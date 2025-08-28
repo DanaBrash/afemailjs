@@ -1,0 +1,166 @@
+name: Deploy Azure Function
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: "Function App name (defaults to env var)"
+        required: false
+      package_path:
+        description: "Path to function project (folder with host.json)"
+        required: false
+        default: "function"
+  push:
+    branches: [ main ]
+    paths:
+      - "function/**"
+      - ".github/workflows/deploy-function.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_RESOURCE_GROUP: rg-mailjs
+  AZURE_FUNCTIONAPP_NAME: func-mailjs
+  NODE_VERSION: '20.x'
+  WORKING_DIR: 'function'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Debug trigger
+        run: |
+          set -euxo pipefail
+          echo "event_name=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "sha=${{ github.sha }}"
+          echo "actor=${{ github.actor }}"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Resolve package path
+        id: resolve
+        run: |
+          set -euxo pipefail
+          echo "pkg=${{ env.WORKING_DIR }}" >> $GITHUB_OUTPUT
+          test -f "${{ env.WORKING_DIR }}/host.json"
+
+      - name: Use Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ steps.resolve.outputs.pkg }}/package-lock.json
+
+      - name: Install deps
+        working-directory: ${{ steps.resolve.outputs.pkg }}
+        run: |
+          set -euxo pipefail
+          echo "[ci] npm install --omit=dev in $PWD"
+          npm install --omit=dev
+
+      - name: Verify axios exists
+        working-directory: ${{ steps.resolve.outputs.pkg }}
+        run: |
+          set -euxo pipefail
+          echo "[ci] verifying axios presence"
+          test -d node_modules
+          test -d node_modules/axios
+          node -e "require.resolve('axios'); console.log('axios resolved OK')"
+
+      - name: Case & path checks
+        run: |
+          set -euxo pipefail
+          echo "[ci] checking for function/host.json"
+          test -f function/host.json
+          echo "[ci] checking for function/index.js"
+          test -f function/index.js
+          echo "[ci] checking for function/functions/mailer.js (case-sensitive)"
+          test -f function/functions/mailer.js
+          echo "[ci] listing tracked files (case issues show up on Linux)"
+          git ls-files | sort | sed -n '1,200p'
+          echo "[ci] grepping for old debug lines"
+          ! grep -R -n "templateParams received:" function || (echo "Found stale debug line"; exit 1)
+
+      - name: Who/what am I deploying?
+        run: |
+          set -euxo pipefail
+          echo "[ci] tree of function dir"
+          find function -maxdepth 3 -type f -print | sort
+          echo "---- index.js ----"
+          sed -n '1,160p' function/index.js
+          echo "---- functions/mailer.js ----"
+          sed -n '1,200p' function/functions/mailer.js
+          echo "---- package.json ----"
+          cat function/package.json
+          echo "---- .funcignore ----"
+          cat function/.funcignore
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+          environment: 'AzureCloud'
+          allow-no-subscriptions: true
+          audience: api://AzureADTokenExchange
+          auth-type: SERVICE_PRINCIPAL
+
+      - name: Who am I (sanity check)
+        run: |
+          set -euxo pipefail
+          az account show --query "{sub:id, tenant:tenantId}" -o table
+
+      - name: Verify function app exists
+        run: |
+          set -euxo pipefail
+          az functionapp show -g "${{ env.AZURE_RESOURCE_GROUP }}" -n "${{ env.AZURE_FUNCTIONAPP_NAME }}" --query "name"
+
+      - name: Deploy functions (includes node_modules)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+          package: ./${{ steps.resolve.outputs.pkg }}
+          respect-funcignore: true
+          enable-oryx-build: false
+          remote-build: false
+          scm-do-build-during-deployment: false
+
+      - name: Verify deployed package contains axios & mailer.js
+        run: |
+          set -euxo pipefail
+          PKG_URL="$(az functionapp config appsettings list -g ${{ env.AZURE_RESOURCE_GROUP }} -n ${{ env.AZURE_FUNCTIONAPP_NAME }}             --query "[?name=='WEBSITE_RUN_FROM_PACKAGE'].value" -o tsv)"
+          echo "Package URL: $PKG_URL"
+          curl -L "$PKG_URL" -o deployed.zip
+          unzip -l deployed.zip | sed -n '1,120p'
+          unzip -l deployed.zip | grep -m1 "functions/mailer.js"
+          unzip -l deployed.zip | grep -m1 "node_modules/axios" || (echo "NO AXIOS IN PACKAGE" && exit 1)
+
+      - name: Restart Function App
+        run: |
+          set -euxo pipefail
+          az functionapp restart -g "${{ env.AZURE_RESOURCE_GROUP }}" -n "${{ env.AZURE_FUNCTIONAPP_NAME }}"
+
+      - name: Sync triggers via ARM (for older CLIs)
+        run: |
+          set -euxo pipefail
+          SUB=$(az account show --query id -o tsv)
+          az rest -m POST -u "https://management.azure.com/subscriptions/$SUB/resourceGroups/${{ env.AZURE_RESOURCE_GROUP }}/providers/Microsoft.Web/sites/${{ env.AZURE_FUNCTIONAPP_NAME }}/syncfunctiontriggers?api-version=2022-09-01"
+
+      - name: List functions
+        run: |
+          set -euxo pipefail
+          az functionapp function list -g "${{ env.AZURE_RESOURCE_GROUP }}" -n "${{ env.AZURE_FUNCTIONAPP_NAME }}" --query "[].{Name:name,Url:invokeUrlTemplate}" -o table
+
+      - name: Tail logs (20s)
+        run: |
+          set -euxo pipefail
+          timeout 20s az webapp log tail -g "${{ env.AZURE_RESOURCE_GROUP }}" -n "${{ env.AZURE_FUNCTIONAPP_NAME }}" || true
