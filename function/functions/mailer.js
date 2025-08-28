@@ -1,47 +1,44 @@
 // function/functions/mailer.js
 const { app } = require("@azure/functions");
 
-// ---- Config / env reads (safe at top-level; won't throw) ----
-const EMAILJS_ENDPOINT     = process.env.EMAILJS_ENDPOINT || "https://api.emailjs.com/api/v1.0/email/send";
-const EMAILJS_SERVICE_ID   = process.env.EMAILJS_SERVICE_ID;
-const EMAILJS_TEMPLATE_ID  = process.env.EMAILJS_TEMPLATE_ID;
-const EMAILJS_USER_ID      = process.env.EMAILJS_PUBLIC_KEY;   // EmailJS "public key"
-const EMAILJS_PRIVATE_KEY  = process.env.EMAILJS_PRIVATE_KEY;  // optional
+// ---------- Config (safe to read at top level) ----------
+const EMAILJS_ENDPOINT =
+  process.env.EMAILJS_ENDPOINT || "https://api.emailjs.com/api/v1.0/email/send";
 
-function assertEnv() {
+// Accept either PUBLIC_KEY or legacy USER_ID for compatibility
+const ENV = {
+  SERVICE_ID:   process.env.EMAILJS_SERVICE_ID,
+  TEMPLATE_ID:  process.env.EMAILJS_TEMPLATE_ID,
+  USER_OR_PUB:  process.env.EMAILJS_PUBLIC_KEY || process.env.EMAILJS_USER_ID,
+  PRIVATE_KEY:  process.env.EMAILJS_PRIVATE_KEY || undefined,
+};
+
+// ---------- Helpers ----------
+function requireEmailJsOrThrow() {
   const missing = [];
-  if (!EMAILJS_SERVICE_ID)  missing.push("EMAILJS_SERVICE_ID");
-  if (!EMAILJS_TEMPLATE_ID) missing.push("EMAILJS_TEMPLATE_ID");
-  if (!EMAILJS_USER_ID)     missing.push("EMAILJS_PUBLIC_KEY");
+  if (!ENV.SERVICE_ID)  missing.push("EMAILJS_SERVICE_ID");
+  if (!ENV.TEMPLATE_ID) missing.push("EMAILJS_TEMPLATE_ID");
+  if (!ENV.USER_OR_PUB) missing.push("EMAILJS_PUBLIC_KEY or EMAILJS_USER_ID");
   if (missing.length) {
-    const err = new Error(`Missing required env var(s): ${missing.join(", ")}`);
-    err.status = 500;
-    throw err;
+    const e = new Error(`Missing required env var(s): ${missing.join(", ")}`);
+    e.status = 500;
+    throw e;
   }
-}
-
-// ---- Helpers ----
-function corsHeaders(origin) {
   return {
-    "Access-Control-Allow-Origin": origin || "*",
-    "Vary": "Origin",
-    "Access-Control-Allow-Methods": "POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, x-functions-key, Authorization",
-    "Access-Control-Max-Age": "86400"
+    serviceId: ENV.SERVICE_ID,
+    templateId: ENV.TEMPLATE_ID,
+    userId:     ENV.USER_OR_PUB,
+    privateKey: ENV.PRIVATE_KEY,
   };
 }
 
 async function readJsonBody(request) {
-  const ct = request.headers.get("content-type") || "";
-  if (!ct.toLowerCase().includes("application/json")) return {};
-  try {
-    return await request.json();
-  } catch {
-    return {};
-  }
+  const ct = (request.headers.get("content-type") || "").toLowerCase();
+  if (!ct.includes("application/json")) return {};
+  try { return await request.json(); } catch { return {}; }
 }
 
-// Validate required EmailJS template fields
+// Your EmailJS template required fields
 function validateTemplateParams(params) {
   const { from_name, reply_to, alias, message } = params || {};
   if (!from_name || !reply_to || !alias || !message) {
@@ -51,94 +48,136 @@ function validateTemplateParams(params) {
   }
 }
 
-// TOP-LEVEL breadcrumb: file loaded
+// ---------- CORS (tight; Postman/curl allowed) ----------
+const PROD_ORIGIN_RE = /^https:\/\/(www\.)?tyranny\.sucks$/i;
+const DEV_ORIGIN_RE  = /^http:\/\/localhost:(5173|3000|7071)$/;
+const isProdEnv = () => !!process.env.WEBSITE_INSTANCE_ID;
+
+function isAllowedOrigin(origin) {
+  if (!origin) return false; // browsers should always send Origin; Postman/curl handled separately
+  if (PROD_ORIGIN_RE.test(origin)) return true; // Azure: only your prod domain(s)
+  if (!isProdEnv() && DEV_ORIGIN_RE.test(origin)) return true; // local dev only
+  return false;
+}
+
+function corsHeaders(origin, allowed) {
+  if (!origin) return {}; // Postman/curl => no CORS headers
+  if (allowed) {
+    return {
+      "Access-Control-Allow-Origin": origin,
+      "Vary": "Origin",
+      "Access-Control-Allow-Methods": "POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, x-functions-key, Authorization",
+      "Access-Control-Max-Age": "86400",
+    };
+  }
+  return { "Access-Control-Allow-Origin": "null", "Vary": "Origin" };
+}
+
+// ---------- Breadcrumb ----------
 console.log("[mailer] module load start");
 
+// ---------- Function registration ----------
 app.http("mailer", {
   methods: ["POST", "OPTIONS"],
   authLevel: "function",
   handler: async (request, context) => {
-    // HANDLER breadcrumb
     console.log("[mailer] handler start");
 
-    // Lazy-require so startup can’t fail if deps were missing in a previous build
-    const axios = require("axios");
-
-    const origin = request.headers.get("origin") || "";
+    // Detect browser vs Postman/curl
+    const origin    = request.headers.get("origin") || "";
+    const isBrowser = !!origin;
+    const allowed   = isAllowedOrigin(origin);
 
     // CORS preflight
     if (request.method === "OPTIONS") {
-      return { status: 204, headers: corsHeaders(origin) };
+      return isBrowser
+        ? (allowed
+            ? { status: 204, headers: corsHeaders(origin, true) }
+            : { status: 403, headers: corsHeaders(origin, false), body: "CORS: origin not allowed" })
+        : { status: 204 }; // non-browser OPTIONS
     }
 
-    try {
-      assertEnv();
+    // Block disallowed browser requests (Postman/curl allowed)
+    if (isBrowser && !allowed) {
+      return {
+        status: 403,
+        headers: corsHeaders(origin, false),
+        body: JSON.stringify({ ok: false, error: "CORS: origin not allowed" }),
+      };
+    }
 
-      // Parse/validate body
+    // Lazy-require so startup can't fail if deps were missing in some deploy
+    const axios = require("axios");
+
+    try {
+      // Env sanity
+      const { serviceId, templateId, userId, privateKey } = requireEmailJsOrThrow();
+
+      // Body parse / normalize / validate
       const body = await readJsonBody(request);
       const templateParams =
         body && typeof body.template_params === "object" ? body.template_params : body || {};
-
-      // Optional normalization (trim whitespace)
       if (templateParams && typeof templateParams === "object") {
         ["from_name", "reply_to", "alias", "message"].forEach((k) => {
           if (k in templateParams) templateParams[k] = String(templateParams[k] ?? "").trim();
         });
       }
-
       validateTemplateParams(templateParams);
 
-      // Build EmailJS payload (strict-mode compatible)
+      // EmailJS request
       const payload = {
-        service_id: EMAILJS_SERVICE_ID,
-        template_id: EMAILJS_TEMPLATE_ID,
-        user_id: EMAILJS_USER_ID,                      // public key
-        accessToken: EMAILJS_PRIVATE_KEY || undefined, // optional
+        service_id: serviceId,
+        template_id: templateId,
+        user_id:    userId,       // public key / user id
+        accessToken: privateKey,  // optional
         template_params: templateParams,
       };
-
-      // Request headers
       const headersObj = {
         "Content-Type": "application/json",
-        ...(EMAILJS_PRIVATE_KEY ? { Authorization: `Bearer ${EMAILJS_PRIVATE_KEY}` } : {}),
-        ...(EMAILJS_PRIVATE_KEY ? { "X-EmailJS-Access-Token": EMAILJS_PRIVATE_KEY } : {}),
+        ...(privateKey ? { Authorization: `Bearer ${privateKey}` } : {}),
+        ...(privateKey ? { "X-EmailJS-Access-Token": privateKey } : {}),
       };
 
       // Call EmailJS
-      const { data, status } = await axios.post(EMAILJS_ENDPOINT, payload, {
+      const { data, status: httpStatus } = await axios.post(EMAILJS_ENDPOINT, payload, {
         headers: headersObj,
         timeout: 15000,
         validateStatus: () => true, // pass through EmailJS status
       });
 
-      if (status >= 200 && status < 300) {
-        context.log(`[mailer] send OK (status ${status})`);
+      if (httpStatus >= 200 && httpStatus < 300) {
+        context.log(`[mailer] send OK (status ${httpStatus})`);
         return {
-          status,
-          headers: { ...corsHeaders(origin), "Content-Type": "application/json" },
+          status: httpStatus,
+          headers: isBrowser
+            ? { ...corsHeaders(origin, true), "Content-Type": "application/json" }
+            : { "Content-Type": "application/json" },
           body: JSON.stringify({ ok: true, data }),
         };
-      } else {
-        const errBody = typeof data === "string" ? { message: data } : data;
-        throw Object.assign(new Error("EmailJS error"), {
-          status: status || 502,
-          info: errBody,
-        });
       }
+
+      // Non-2xx from EmailJS
+      const errBody = typeof data === "string" ? { message: data } : data;
+      throw Object.assign(new Error("EmailJS error"), {
+        status: httpStatus || 502,
+        info: errBody,
+      });
     } catch (err) {
-      const status = err?.status || err?.response?.status || 400;
+      const httpStatus = err?.status || err?.response?.status || 400;
       const info = err?.info || err?.response?.data || err?.message || "Unknown error";
       try {
         context.log.error(`[mailer] error: ${typeof info === "string" ? info : JSON.stringify(info)}`);
       } catch {}
       return {
-        status,
-        headers: { ...corsHeaders(origin), "Content-Type": "application/json" },
+        status: httpStatus,
+        headers: isBrowser
+          ? { ...corsHeaders(origin, allowed), "Content-Type": "application/json" }
+          : { "Content-Type": "application/json" },
         body: JSON.stringify({ ok: false, error: info }),
       };
     }
   },
 });
 
-// POST-REGISTRATION breadcrumb
 console.log("[mailer] registered");
