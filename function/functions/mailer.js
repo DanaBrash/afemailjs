@@ -63,9 +63,12 @@ async function readJsonBody(req, maxBytes = 256 * 1024) {
 
 // CHANGE: tiny validator for required fields
 function validateTemplateParams(params) {
-  const { name, email, message } = params || {};
-  if (!name || !email || !message) {
-    throw Object.assign(new Error("name, email, and message are required"), { status: 400 });
+  const { from_name, reply_to, alias, message } = params || {};
+  if (!from_name || !reply_to || !alias || !message) {
+    throw Object.assign(
+      new Error("from_name, reply_to, alias, and message are required"),
+      { status: 400 }
+    );
   }
 }
 
@@ -94,6 +97,7 @@ app.http("mailer", {
       const templateParams =
         body && typeof body.template_params === "object" ? body.template_params : body || {};
       validateTemplateParams(templateParams);
+
 
       // Build EmailJS payload (strict-mode compatible)
       const payload = {
