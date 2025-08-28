@@ -1,5 +1,6 @@
 local.settings.json
 .vscode/
+tests/
 test/
 getting_started.md
 node_modules/@types/
@@ -7,3 +8,4 @@ node_modules/azure-functions-core-tools/
 node_modules/typescript/
 *.js.map
 *.ts
+README.md
