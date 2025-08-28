@@ -38,9 +38,9 @@ async function readJsonBody(request) {
   try { return await request.json(); } catch { return {}; }
 }
 
-// Your EmailJS template required fields
 function validateTemplateParams(params) {
   const { from_name, reply_to, alias, message } = params || {};
+
   if (!from_name || !reply_to || !alias || !message) {
     const err = new Error("from_name, reply_to, alias, and message are required");
     err.status = 400;
