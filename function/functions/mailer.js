@@ -66,9 +66,12 @@ async function readJsonBody(req, maxBytes = 256 * 1024) {
   }
 }
 
+console.log("templateParams received:", templateParams);
+
 // CHANGE: tiny validator for required fields
 function validateTemplateParams(params) {
   const { from_name, reply_to, alias, message } = params || {};
+
   if (!from_name || !reply_to || !alias || !message) {
     const err = new Error("from_name, reply_to, alias, and message are required");
     err.status = 400;
