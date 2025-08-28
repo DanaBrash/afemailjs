@@ -1,9 +1,11 @@
-// Root entrypoint for the Functions host.
-// Require any files that register handlers via app.http(...).
-require("./functions/mailer.js");
+// function/index.js
+try {
+  require("./functions/mailer.js");
+  console.log("[bootstrap] mailer.js loaded");
+} catch (err) {
+  console.error("[bootstrap] FAILED to load functions/mailer.js:", err);
+}
 
-// Optional: a tiny health function to prove discovery works.
-// If this registers but mailer doesn't, the error is inside mailer.js.
 const { app } = require("@azure/functions");
 app.http("health", {
   methods: ["GET"],
