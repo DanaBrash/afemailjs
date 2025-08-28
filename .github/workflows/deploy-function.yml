@@ -1,25 +1,20 @@
 name: Deploy Azure Function
 
 on:
-  # Run this ONLY after Terraform (infra) finishes
   workflow_run:
-    workflows: ["Terraform (infra)"]   # must match the 'name:' in your infra workflow
+    workflows: ["Terraform (infra)"]
     types: [completed]
-
-  # Manual button
   workflow_dispatch:
     inputs:
       app_name:
-        description: "Function App name (defaults to env var)"
+        description: "Function App name (overrides env)"
         required: false
       package_path:
-        description: "Path to function project (folder with host.json)"
+        description: "Folder with host.json"
         required: false
         default: "function"
-
-  # Auto-trigger on function code changes
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
       - "function/**"
       - ".github/workflows/deploy-function.yml"
@@ -32,108 +27,72 @@ concurrency:
   group: function-deploy
   cancel-in-progress: true
 
-  # trigger a refresh of the file in git
 env:
-  AZURE_FUNCTIONAPP_NAME: func-mailjs
-  NODE_VERSION: '20.x'
-  WORKING_DIR: 'function'
+  NODE_VERSION: "20.x"
+  WORKING_DIR: "function"
+  AZURE_RESOURCE_GROUP: "rg-mailjs"
+  AZURE_FUNCTIONAPP_NAME: "func-mailjs"
 
 jobs:
   deploy:
-    # Only proceed if Terraform workflow concluded SUCCESS
+    # If triggered by workflow_run, only continue when the infra workflow succeeded
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    steps:
-      - name: Debug trigger
-        run: |
-          echo "event_name=${{ github.event_name }}"
-          echo "from_workflow=${{ github.event.workflow_run.name || 'n/a' }}"
-          echo "conclusion=${{ github.event.workflow_run.conclusion || 'n/a' }}"
 
-      - name: Checkout same commit Terraform ran against
+    steps:
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          # Use the exact commit Terraform ran against when triggered by workflow_run
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Resolve package path / app name from inputs (if provided)
+        id: resolve
+        run: |
+          PKG="${{ github.event.inputs.package_path }}"
+          APP="${{ github.event.inputs.app_name }}"
+          echo "pkg=${PKG:-${{ env.WORKING_DIR }}}" >> $GITHUB_OUTPUT
+          echo "app=${APP:-${{ env.AZURE_FUNCTIONAPP_NAME }}}" >> $GITHUB_OUTPUT
 
       - name: Use Node ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+          cache: npm
+          cache-dependency-path: ${{ steps.resolve.outputs.pkg }}/package-lock.json
 
-      - name: Install production deps
-        working-directory: ${{ env.WORKING_DIR }}
+      - name: Install deps (prefer lockfile)
+        working-directory: ${{ steps.resolve.outputs.pkg }}
         run: |
-          npm ci --omit=dev
-          npm prune --omit=dev
-      
-      - name: Update Az PowerShell module
-        shell: pwsh
-        run: |
-          Install-Module Az -Force -Scope CurrentUser
+          if [ -f package-lock.json ]; then
+            npm ci --omit=dev
+          else
+            echo "package-lock.json not found; using npm install"
+            npm install --omit=dev
+          fi
 
-      - name: Azure login (OIDC via tf-deployer)
+      - name: Azure login (OIDC)
         uses: azure/login@v2
-        with:  # read from Github secrets
-          client-id:   "bdbc6bec-6f3d-48b9-99e9-6bbcc0ef51f5"        # tf-deployer app (client) ID 
-          tenant-id:   "6dd7381d-4ace-410a-b7f3-011a192ebe60"       # your tenant ID
-          subscription-id:  "c1b1f12b-41c7-4fb3-b5ac-02e36ce1331e"   # your subscription ID
-          enable-AzPSSession: true  # needed for az account show
-          environment: 'AzureCloud' # or 'AzureUSGovernment' etc.
-          allow-no-subscriptions: true
-          audience: api://AzureADTokenExchange
-          auth-type: SERVICE_PRINCIPAL
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}       # bdbc6bec-... in secrets
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}       # 6dd7381d-... in secrets
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          enable-AzPSSession: false
 
-      - name: Who am I (sanity check)
-        run: az account show --query "{sub:id, tenant:tenantId}" -o table
+      - name: Verify target Function App exists
+        run: az functionapp show -g "${{ env.AZURE_RESOURCE_GROUP }}" -n "${{ steps.resolve.outputs.app }}"
 
-      - name: Verify function app exists
-        run: az functionapp show -g rg-mailjs -n func-mailjs
-        
-      - name: Show function package contents
-        run: |
-          echo "---- function/ tree ----"
-          find function -maxdepth 2 -type f -print | sort
-          echo "---- package.json ----"
-          cat function/package.json
-
-      # (Only if you're using Option A – CI build)
-      - name: Verify node_modules subset
-        if: ${{ always() }}
-        run: |
-          test -d function/node_modules && ls -1 function/node_modules | head -n 20 || echo "no node_modules found"
-
-      - name: Show function package contents (pre-deploy)
-        run: |
-          echo "---- function/ tree ----"
-          find function -maxdepth 3 -type f -print | sort
-          echo "---- .funcignore ----"
-          cat function/.funcignore || true
-          echo "---- package.json ----"
-          cat function/package.json
-
+      # Deploy via Kudu zipdeploy (Oryx build on server)
       - name: Deploy functions
         uses: Azure/functions-action@v1
         with:
-          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-          package: ./function
+          app-name: ${{ steps.resolve.outputs.app }}
+          package: ./${{ steps.resolve.outputs.pkg }}
           respect-funcignore: true
           enable-oryx-build: true
-        continue-on-error: true  # still want debugging info below
 
-      - name: Show package contents deployed (pre-deploy check)
+      - name: Restart and list functions (sanity)
         run: |
-          echo "---- function/ tree (local before deploy) ----"
-          find function -maxdepth 2 -type f -print | sort
-          echo "---- package.json ----"
-          cat function/package.json
-    
-      - name: Restart Function App (forces trigger sync)
-        run: az functionapp restart -g rg-mailjs -n func-mailjs
-
-      - name: List functions
-        run: az functionapp function list -g rg-mailjs -n func-mailjs --query "[].{Name:name,Url:invokeUrlTemplate}" -o table
-
-      - name: Tail logs (15s)
-        run: timeout 15s az functionapp log tail -g rg-mailjs -n func-mailjs || true
+          az functionapp restart -g "${{ env.AZURE_RESOURCE_GROUP }}" -n "${{ steps.resolve.outputs.app }}"
+          az functionapp function list -g "${{ env.AZURE_RESOURCE_GROUP }}" -n "${{ steps.resolve.outputs.app }}" \
+            --query "[].{Name:name,Url:invokeUrlTemplate}" -o table
