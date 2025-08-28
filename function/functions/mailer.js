@@ -7,10 +7,10 @@ const EMAILJS_ENDPOINT =
 
 // Accept either PUBLIC_KEY or legacy USER_ID for compatibility
 const ENV = {
-  SERVICE_ID:   process.env.EMAILJS_SERVICE_ID,
-  TEMPLATE_ID:  process.env.EMAILJS_TEMPLATE_ID,
-  USER_OR_PUB:  process.env.EMAILJS_PUBLIC_KEY || process.env.EMAILJS_USER_ID,
-  PRIVATE_KEY:  process.env.EMAILJS_PRIVATE_KEY || undefined,
+  SERVICE_ID:   (process.env.EMAILJS_SERVICE_ID || "").trim(),
+  TEMPLATE_ID:  (process.env.EMAILJS_TEMPLATE_ID || "").trim(),
+  PUBLIC_KEY:   (process.env.EMAILJS_PUBLIC_KEY || "").trim(),
+  PRIVATE_KEY:  (process.env.EMAILJS_PRIVATE_KEY || "").trim() || undefined,
 };
 
 // ---------- Helpers ----------
@@ -18,7 +18,7 @@ function requireEmailJsOrThrow() {
   const missing = [];
   if (!ENV.SERVICE_ID)  missing.push("EMAILJS_SERVICE_ID");
   if (!ENV.TEMPLATE_ID) missing.push("EMAILJS_TEMPLATE_ID");
-  if (!ENV.USER_OR_PUB) missing.push("EMAILJS_PUBLIC_KEY or EMAILJS_USER_ID");
+  if (!ENV.PUBLIC_KEY) missing.push("EMAILJS_PUBLIC_KEY");
   if (missing.length) {
     const e = new Error(`Missing required env var(s): ${missing.join(", ")}`);
     e.status = 500;
@@ -27,7 +27,7 @@ function requireEmailJsOrThrow() {
   return {
     serviceId: ENV.SERVICE_ID,
     templateId: ENV.TEMPLATE_ID,
-    userId:     ENV.USER_OR_PUB,
+    userId:     ENV.PUBLIC_KEY,
     privateKey: ENV.PRIVATE_KEY,
   };
 }
