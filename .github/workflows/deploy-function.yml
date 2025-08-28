@@ -88,10 +88,12 @@ jobs:
       - name: Deploy functions
         uses: Azure/functions-action@v1
         with:
-          app-name: ${{ steps.resolve.outputs.app }}
-          package: ./${{ steps.resolve.outputs.pkg }}
+          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+          package: ./${{ steps.resolve.outputs.pkg }}   # points at the folder with host.json
           respect-funcignore: true
           enable-oryx-build: true
+          remote-build: true
+          scm-do-build-during-deployment: true
 
       - name: Restart and list functions (sanity)
         run: |
