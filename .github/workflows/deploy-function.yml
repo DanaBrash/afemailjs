@@ -61,16 +61,6 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ steps.resolve.outputs.pkg }}/package-lock.json
 
-      - name: Install deps (prefer lockfile)
-        working-directory: ${{ steps.resolve.outputs.pkg }}
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci --omit=dev
-          else
-            echo "package-lock.json not found; using npm install"
-            npm install --omit=dev
-          fi
-
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
