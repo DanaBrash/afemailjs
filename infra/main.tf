@@ -8,6 +8,12 @@ resource "azurerm_resource_group" "rg" {
   location = local.location
 }
 
+resource "azurerm_resource_group" "rg_test" {
+  name     = "rg-test"
+  location = "East US 2"
+}
+
+
 # User-Assigned Managed Identity (shared across RG)
 resource "azurerm_user_assigned_identity" "uami" {
   name                = module.naming.user_assigned_identity.name

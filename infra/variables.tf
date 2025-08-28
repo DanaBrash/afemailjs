@@ -33,7 +33,7 @@ variable "emailjs_template_id" {
   type    = string
   default = "template_hzcvjoc"
 }
-variable "emailjs_user_id" {
+variable "emailjs_public_key" {
   type    = string
   default = "Nhcs_vv_yPrheGumE"
 }
