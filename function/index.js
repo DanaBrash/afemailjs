@@ -1,7 +1,8 @@
 // function/index.js
 try {
+  console.log("[bootstrap] loading functions/mailer.js");
   require("./functions/mailer.js");
-  console.log("[bootstrap] mailer.js loaded");
+  console.log("[bootstrap] loaded functions/mailer.js");
 } catch (err) {
   console.error("[bootstrap] FAILED to load functions/mailer.js:", err);
 }
