@@ -36,12 +36,16 @@ function corsHeaders(origin) {
   return allowOrigin ? { "Access-Control-Allow-Origin": allowOrigin, ...base } : base;
 }
 
-// Minimal env sanity check (fail fast if misconfigured)
 function assertEnv() {
-  if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_USER_ID) {
-    throw new Error("Missing one or more EmailJS IDs (service/template/user). Check configuration.");
+  const missing = [];
+  if (!EMAILJS_SERVICE_ID)  missing.push("EMAILJS_SERVICE_ID");
+  if (!EMAILJS_TEMPLATE_ID) missing.push("EMAILJS_TEMPLATE_ID");
+  if (!EMAILJS_USER_ID)     missing.push("EMAILJS_PUBLIC_KEY");
+  if (missing.length) {
+    const err = new Error(`Missing required env var(s): ${missing.join(", ")}`);
+    err.status = 500;
+    throw err;
   }
-  // Private key is optional unless EmailJS strict mode is enabled.
 }
 
 // CHANGE: small body parser with content-type guard + size cap (basic DoS safety)
@@ -50,6 +54,7 @@ async function readJsonBody(req, maxBytes = 256 * 1024) {
   if (!ct.includes("application/json")) {
     throw Object.assign(new Error("Content-Type must be application/json"), { status: 415 });
   }
+  
   const text = await req.text();
   if (text.length > maxBytes) {
     throw Object.assign(new Error("Payload too large"), { status: 413 });
@@ -65,10 +70,9 @@ async function readJsonBody(req, maxBytes = 256 * 1024) {
 function validateTemplateParams(params) {
   const { from_name, reply_to, alias, message } = params || {};
   if (!from_name || !reply_to || !alias || !message) {
-    throw Object.assign(
-      new Error("from_name, reply_to, alias, and message are required"),
-      { status: 400 }
-    );
+    const err = new Error("from_name, reply_to, alias, and message are required");
+    err.status = 400;
+    throw err;
   }
 }
 
@@ -78,14 +82,12 @@ function validateTemplateParams(params) {
 app.http("mailer", {
   methods: ["POST", "OPTIONS"],
   authLevel: "function",
-  // CHANGE: (optional) route example:
-  // route: "contact",
+  // route: "contact", // optional
   handler: async (request, context) => {
     const origin = request.headers.get("origin") || "";
 
     // CORS preflight
     if (request.method === "OPTIONS") {
-      // CHANGE: always respond to preflight; do not require auth on OPTIONS
       return { status: 204, headers: corsHeaders(origin) };
     }
 
@@ -96,8 +98,15 @@ app.http("mailer", {
       const body = await readJsonBody(request);
       const templateParams =
         body && typeof body.template_params === "object" ? body.template_params : body || {};
-      validateTemplateParams(templateParams);
 
+      // Optional normalization (kept minimal): trim outer whitespace
+      if (templateParams && typeof templateParams === "object") {
+        ["from_name", "reply_to", "alias", "message"].forEach((k) => {
+          if (k in templateParams) templateParams[k] = String(templateParams[k] ?? "").trim();
+        });
+      } // ← MISSING BRACE WAS HERE
+
+      validateTemplateParams(templateParams);
 
       // Build EmailJS payload (strict-mode compatible)
       const payload = {
@@ -111,16 +120,16 @@ app.http("mailer", {
       // Request headers
       const headersObj = {
         "Content-Type": "application/json",
-        // CHANGE: send both headers only if we actually have the private key
+        // send both headers only if we actually have the private key
         ...(EMAILJS_PRIVATE_KEY ? { Authorization: `Bearer ${EMAILJS_PRIVATE_KEY}` } : {}),
         ...(EMAILJS_PRIVATE_KEY ? { "X-EmailJS-Access-Token": EMAILJS_PRIVATE_KEY } : {}),
       };
 
-      // CHANGE: timeout + explicit error messages from axios
+      // timeout + explicit error messages from axios
       const { data, status } = await axios.post(EMAILJS_ENDPOINT, payload, {
         headers: headersObj,
         timeout: 15000, // 15s
-        validateStatus: () => true, // let us pass through EmailJS status
+        validateStatus: () => true, // pass through EmailJS status; we handle below
       });
 
       if (status >= 200 && status < 300) {
@@ -141,8 +150,11 @@ app.http("mailer", {
     } catch (err) {
       const status = err?.status || err?.response?.status || 400;
       const info = err?.info || err?.response?.data || err?.message || "Unknown error";
-      // CHANGE: use context.log.error (always available) instead of optional chaining
-      context.log.error?.(`mailer error: ${typeof info === "string" ? info : JSON.stringify(info)}`);
+
+      // Use context.log.error directly (no optional chaining call)
+      try {
+        context.log.error(`mailer error: ${typeof info === "string" ? info : JSON.stringify(info)}`);
+      } catch { /* ignore logging failures */ }
 
       return {
         status,
@@ -152,11 +164,3 @@ app.http("mailer", {
     }
   },
 });
-
-// CHANGE: (optional) lightweight health endpoint without auth
-// Uncomment to enable GET /api/health
-// app.http("health", {
-//   methods: ["GET"],
-//   authLevel: "anonymous",
-//   handler: async () => ({ status: 200, body: "ok" }),
-// });
