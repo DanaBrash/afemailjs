@@ -91,9 +91,17 @@ jobs:
           app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
           package: ./${{ steps.resolve.outputs.pkg }}   # points at the folder with host.json
           respect-funcignore: true
-          enable-oryx-build: true
-          remote-build: true
-          scm-do-build-during-deployment: true
+          enable-oryx-build: false
+          remote-build: false
+          scm-do-build-during-deployment: false
+
+      - name: Verify deployed package contains deps
+        run: |
+          PKG_URL="$(az functionapp config appsettings list -g ${{ env.AZURE_RESOURCE_GROUP }} -n ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+            --query "[?name=='WEBSITE_RUN_FROM_PACKAGE'].value" -o tsv)"
+          echo "Package URL: $PKG_URL"
+          curl -L "$PKG_URL" -o deployed.zip
+          unzip -l deployed.zip | grep -m1 "node_modules/axios" || (echo "NO AXIOS IN PACKAGE" && exit 1)
 
       - name: Restart and list functions (sanity)
         run: |
