@@ -1,7 +1,8 @@
 // mailer.js
 // New-model Azure Functions (v4) – discovered via app.http(..), no function.json required
 const { app } = require("@azure/functions");
-const axios = require("axios");
+console.log("[mailer] module load start");
+// const axios = require("axios");
 
 // ---- Env / config -----------------------------------------------------------
 const EMAILJS_SERVICE_ID = (process.env.EMAILJS_SERVICE_ID || "").trim();
@@ -84,7 +85,9 @@ app.http("mailer", {
   authLevel: "function",
   // route: "contact", // optional
   handler: async (request, context) => {
+    const axios = require("axios"); // lazy-require, prevents startup crash
     const origin = request.headers.get("origin") || "";
+    console.log("[mailer] module load start");
 
     // CORS preflight
     if (request.method === "OPTIONS") {
