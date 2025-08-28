@@ -31,7 +31,7 @@ variable "emailjs_service_id" {
 }
 variable "emailjs_template_id" {
   type    = string
-  default = "template_hzcvjoc"
+  default = "template_g867h71"
 }
 variable "emailjs_public_key" {
   type    = string
@@ -40,7 +40,7 @@ variable "emailjs_public_key" {
 variable "emailjs_private_key" {
   type      = string
   sensitive = true
-  default   = ""
+  default   = "zNTc3DE3fW6rWdPwNPiVw"
 }
 
 # OIDC to Azure (optional: OFF by default so you can apply immediately)
