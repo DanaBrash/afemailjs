@@ -72,6 +72,18 @@ jobs:
       - name: Verify target Function App exists
         run: az functionapp show -g "${{ env.AZURE_RESOURCE_GROUP }}" -n "${{ steps.resolve.outputs.app }}"
 
+      - name: Install deps
+        working-directory: ${{ steps.resolve.outputs.pkg }}
+        run: npm install --omit=dev
+
+      - name: Verify axios exists
+        working-directory: ${{ steps.resolve.outputs.pkg }}
+        run: |
+          test -f package.json || (echo "No package.json" && exit 1)
+          test -d node_modules || (echo "node_modules missing" && exit 1)
+          test -d node_modules/axios || (echo "axios missing" && exit 1)
+          node -e "require.resolve('axios'); console.log('axios resolved OK')"
+
       # Deploy via Kudu zipdeploy (Oryx build on server)
       - name: Deploy functions
         uses: Azure/functions-action@v1
@@ -84,5 +96,4 @@ jobs:
       - name: Restart and list functions (sanity)
         run: |
           az functionapp restart -g "${{ env.AZURE_RESOURCE_GROUP }}" -n "${{ steps.resolve.outputs.app }}"
-          az functionapp function list -g "${{ env.AZURE_RESOURCE_GROUP }}" -n "${{ steps.resolve.outputs.app }}" \
-            --query "[].{Name:name,Url:invokeUrlTemplate}" -o table
+      
