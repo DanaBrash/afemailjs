@@ -66,11 +66,15 @@ console.log("templateParams received:", templateParams);
 // CHANGE: tiny validator for required fields
 function validateTemplateParams(params) {
   const { from_name, reply_to, alias, message } = params || {};
-  if (!from_name || !reply_to || !alias) {
-    throw Object.assign(new Error("name, email, and alias are required"), { status: 400 });
+
+  if (!from_name || !reply_to || !alias || !message) {
+    throw Object.assign(
+      new Error("from_name, reply_to, alias, and message are required"),
+      { status: 400 }
+    );
+
   }
 }
-
 
 // ---- Function (HTTP trigger) ------------------------------------------------
 // Function name is "mailer" (visible in portal/CLI). Route defaults to /api/mailer.
@@ -97,6 +101,7 @@ app.http("mailer", {
       const templateParams =
         body && typeof body.template_params === "object" ? body.template_params : body || {};
       validateTemplateParams(templateParams);
+
 
       // Build EmailJS payload (strict-mode compatible)
       const payload = {
