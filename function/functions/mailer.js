@@ -1,41 +1,12 @@
-// mailer.js
-// New-model Azure Functions (v4) – discovered via app.http(..), no function.json required
+// function/functions/mailer.js
 const { app } = require("@azure/functions");
-console.log("[mailer] module load start");
-// const axios = require("axios");
 
-// ---- Env / config -----------------------------------------------------------
-const EMAILJS_SERVICE_ID = (process.env.EMAILJS_SERVICE_ID || "").trim();
-const EMAILJS_TEMPLATE_ID = (process.env.EMAILJS_TEMPLATE_ID || "").trim();
-const EMAILJS_USER_ID     = (process.env.EMAILJS_USER_ID || "").trim();        // public key
-const EMAILJS_PRIVATE_KEY = (process.env.EMAILJS_PRIVATE_KEY || "").trim();    // private key (for strict mode)
-const EMAILJS_ENDPOINT    = (process.env.EMAILJS_ENDPOINT || "https://api.emailjs.com/api/v1.0/email/send").trim();
-
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
-  .split(",")
-  .map(s => s.trim())
-  .filter(Boolean);
-
-// CHANGE: allow commas/spaces or * for “any”, and normalize origin compare
-const allowAnyOrigin = ALLOWED_ORIGINS.includes("*");
-
-// ---- Helpers ----------------------------------------------------------------
-function corsHeaders(origin) {
-  // CHANGE: echo specific origin if allowed (or first configured) – else block
-  const allowOrigin =
-    allowAnyOrigin ? "*" :
-    ALLOWED_ORIGINS.includes(origin) ? origin :
-    (ALLOWED_ORIGINS[0] || ""); // empty string -> no CORS header
-
-  const base = {
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-EmailJS-Access-Token, x-functions-key",
-    Vary: "Origin",
-  };
-
-  // Only set Allow-Origin if we have a match (or *).
-  return allowOrigin ? { "Access-Control-Allow-Origin": allowOrigin, ...base } : base;
-}
+// ---- Config / env reads (safe at top-level; won't throw) ----
+const EMAILJS_ENDPOINT     = process.env.EMAILJS_ENDPOINT || "https://api.emailjs.com/api/v1.0/email/send";
+const EMAILJS_SERVICE_ID   = process.env.EMAILJS_SERVICE_ID;
+const EMAILJS_TEMPLATE_ID  = process.env.EMAILJS_TEMPLATE_ID;
+const EMAILJS_USER_ID      = process.env.EMAILJS_PUBLIC_KEY;   // EmailJS "public key"
+const EMAILJS_PRIVATE_KEY  = process.env.EMAILJS_PRIVATE_KEY;  // optional
 
 function assertEnv() {
   const missing = [];
@@ -49,27 +20,28 @@ function assertEnv() {
   }
 }
 
-// CHANGE: small body parser with content-type guard + size cap (basic DoS safety)
-async function readJsonBody(req, maxBytes = 256 * 1024) {
-  const ct = (req.headers.get("content-type") || "").toLowerCase();
-  if (!ct.includes("application/json")) {
-    throw Object.assign(new Error("Content-Type must be application/json"), { status: 415 });
-  }
-  
-  const text = await req.text();
-  if (text.length > maxBytes) {
-    throw Object.assign(new Error("Payload too large"), { status: 413 });
-  }
+// ---- Helpers ----
+function corsHeaders(origin) {
+  return {
+    "Access-Control-Allow-Origin": origin || "*",
+    "Vary": "Origin",
+    "Access-Control-Allow-Methods": "POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, x-functions-key, Authorization",
+    "Access-Control-Max-Age": "86400"
+  };
+}
+
+async function readJsonBody(request) {
+  const ct = request.headers.get("content-type") || "";
+  if (!ct.toLowerCase().includes("application/json")) return {};
   try {
-    return JSON.parse(text);
+    return await request.json();
   } catch {
-    throw Object.assign(new Error("Invalid JSON"), { status: 400 });
+    return {};
   }
 }
 
-console.log("templateParams received:", templateParams);
 
-// CHANGE: tiny validator for required fields
 function validateTemplateParams(params) {
   const { from_name, reply_to, alias, message } = params || {};
 
@@ -80,17 +52,20 @@ function validateTemplateParams(params) {
   }
 }
 
-// ---- Function (HTTP trigger) ------------------------------------------------
-// Function name is "mailer" (visible in portal/CLI). Route defaults to /api/mailer.
-// If you prefer /api/contact, add `route: "contact"` in options below.
+// TOP-LEVEL breadcrumb: file loaded
+console.log("[mailer] module load start");
+
 app.http("mailer", {
   methods: ["POST", "OPTIONS"],
   authLevel: "function",
-  // route: "contact", // optional
   handler: async (request, context) => {
-    const axios = require("axios"); // lazy-require, prevents startup crash
+    // HANDLER breadcrumb
+    console.log("[mailer] handler start");
+
+    // Lazy-require so startup can’t fail if deps were missing in a previous build
+    const axios = require("axios");
+
     const origin = request.headers.get("origin") || "";
-    console.log("[mailer] module load start");
 
     // CORS preflight
     if (request.method === "OPTIONS") {
@@ -105,12 +80,12 @@ app.http("mailer", {
       const templateParams =
         body && typeof body.template_params === "object" ? body.template_params : body || {};
 
-      // Optional normalization (kept minimal): trim outer whitespace
+      // Optional normalization (trim whitespace)
       if (templateParams && typeof templateParams === "object") {
         ["from_name", "reply_to", "alias", "message"].forEach((k) => {
           if (k in templateParams) templateParams[k] = String(templateParams[k] ?? "").trim();
         });
-      } // ← MISSING BRACE WAS HERE
+      }
 
       validateTemplateParams(templateParams);
 
@@ -118,35 +93,33 @@ app.http("mailer", {
       const payload = {
         service_id: EMAILJS_SERVICE_ID,
         template_id: EMAILJS_TEMPLATE_ID,
-        user_id: EMAILJS_USER_ID,                      // public key in body is required
-        accessToken: EMAILJS_PRIVATE_KEY || undefined, // helps strict mode for some accounts
+        user_id: EMAILJS_USER_ID,                      // public key
+        accessToken: EMAILJS_PRIVATE_KEY || undefined, // optional
         template_params: templateParams,
       };
 
       // Request headers
       const headersObj = {
         "Content-Type": "application/json",
-        // send both headers only if we actually have the private key
         ...(EMAILJS_PRIVATE_KEY ? { Authorization: `Bearer ${EMAILJS_PRIVATE_KEY}` } : {}),
         ...(EMAILJS_PRIVATE_KEY ? { "X-EmailJS-Access-Token": EMAILJS_PRIVATE_KEY } : {}),
       };
 
-      // timeout + explicit error messages from axios
+      // Call EmailJS
       const { data, status } = await axios.post(EMAILJS_ENDPOINT, payload, {
         headers: headersObj,
-        timeout: 15000, // 15s
-        validateStatus: () => true, // pass through EmailJS status; we handle below
+        timeout: 15000,
+        validateStatus: () => true, // pass through EmailJS status
       });
 
       if (status >= 200 && status < 300) {
-        context.log(`EmailJS send OK (status ${status})`);
+        context.log(`[mailer] send OK (status ${status})`);
         return {
           status,
           headers: { ...corsHeaders(origin), "Content-Type": "application/json" },
           body: JSON.stringify({ ok: true, data }),
         };
       } else {
-        // Non-2xx from EmailJS
         const errBody = typeof data === "string" ? { message: data } : data;
         throw Object.assign(new Error("EmailJS error"), {
           status: status || 502,
@@ -156,12 +129,9 @@ app.http("mailer", {
     } catch (err) {
       const status = err?.status || err?.response?.status || 400;
       const info = err?.info || err?.response?.data || err?.message || "Unknown error";
-
-      // Use context.log.error directly (no optional chaining call)
       try {
-        context.log.error(`mailer error: ${typeof info === "string" ? info : JSON.stringify(info)}`);
-      } catch { /* ignore logging failures */ }
-
+        context.log.error(`[mailer] error: ${typeof info === "string" ? info : JSON.stringify(info)}`);
+      } catch {}
       return {
         status,
         headers: { ...corsHeaders(origin), "Content-Type": "application/json" },
@@ -170,3 +140,6 @@ app.http("mailer", {
     }
   },
 });
+
+// POST-REGISTRATION breadcrumb
+console.log("[mailer] registered");

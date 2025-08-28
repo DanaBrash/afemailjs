@@ -1,10 +1,10 @@
 // function/index.js
+console.log("[bootstrap] loading functions/mailer.js");
 try {
-  console.log("[bootstrap] loading functions/mailer.js");
-  require("./functions/mailer.js");
+  require("./functions/mailer.js"); // NOTE: path is case-sensitive on Linux
   console.log("[bootstrap] loaded functions/mailer.js");
 } catch (err) {
-  console.error("[bootstrap] FAILED to load functions/mailer.js:", err);
+  console.error("[bootstrap] FAILED to load functions/mailer.js:", err?.stack || err);
 }
 
 const { app } = require("@azure/functions");
