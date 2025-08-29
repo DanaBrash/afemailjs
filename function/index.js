@@ -8,12 +8,7 @@ app.http("health", {
   handler: async () => ({ status: 200, body: "ok" }),
 });
 
-// mailer stays at /api/mailer (even with empty routePrefix)
-app.http("mailer", {
-  route: "api/mailer",
-  methods: ["POST", "OPTIONS"],
-  authLevel: "function",
-  handler: async (request, context) => {
-    // ...your existing code...
-  },
-});
+
+  console.log("[bootstrap] loading functions/mailer.js");
+  require("./functions/mailer.js");   // this executes mailer.js and registers "mailer"
+  console.log("[bootstrap] loaded functions/mailer.js");
