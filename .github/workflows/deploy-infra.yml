@@ -76,6 +76,7 @@ jobs:
             -backend-config="storage_account_name=calabashtfstate" \
             -backend-config="container_name=tfstate" \
             -backend-config="key=afemailjs/terraform.tfstate" \
+            -backend-config="subscription_id=c1b1f12b-41c7-4fb3-b5ac-02e36ce1331e" \
             -backend-config="use_azuread_auth=true"
 
       - name: Terraform validate [non-PR]
