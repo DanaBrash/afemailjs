@@ -18,6 +18,7 @@ permissions:
   contents: read
 
 # keep your original 'single lane' behavior
+# keep your original single-lane behavior
 concurrency:
   group: infra-terraform
   cancel-in-progress: true
@@ -29,7 +30,6 @@ env:
 jobs:
   terraform:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,44 +43,52 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform fmt -check -recursive -diff
 
-      # Login so azurerm backend can init (works for same-repo PRs and main)
-      - name: Azure login (OIDC)
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+      # PRs (no Azure login): backendless init + validate only
+      - name: Terraform init (no backend) [PRs]
+        if: github.event_name == 'pull_request'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init -backend=false -reconfigure -upgrade -input=false
+
+      - name: Terraform validate [PRs]
+        if: github.event_name == 'pull_request'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform validate
+
+      # Non-PR runs (push/main, manual): login + real backend + plan/apply
+      - name: Azure login (OIDC) [non-PR]
+        if: github.event_name != 'pull_request'
         uses: azure/login@v2
         with:
           client-id:   "bdbc6bec-6f3d-48b9-99e9-6bbcc0ef51f5"        # ${{ secrets.AZURE_CLIENT_ID }}  tf-deployer app (client) ID 
           tenant-id:   "6dd7381d-4ace-410a-b7f3-011a192ebe60"        # ${{ secrets.AZURE_TENANT_ID }}  your tenant ID
           subscription-id:  "c1b1f12b-41c7-4fb3-b5ac-02e36ce1331e"   # ${{ secrets.AZURE_SUBSCRIPTION_ID }}  your subscription ID
 
-      # Clean local cache between runs (keep lockfile)
-      - name: Clean TF cache
+      - name: Clean TF cache [non-PR]
+        if: github.event_name != 'pull_request'
         run: rm -rf "${{ env.WORKING_DIR }}/.terraform"
 
-      # Init with REAL backend whenever we can log in (so plan works)
-      - name: Terraform init (remote backend)
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+      - name: Terraform init (remote backend) [non-PR]
+        if: github.event_name != 'pull_request'
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          terraform init -reconfigure -upgrade -input=false             -backend-config="resource_group_name=env-rg"             -backend-config="storage_account_name=calabashtfstate"             -backend-config="container_name=tfstate"             -backend-config="key=afemailjs/terraform.tfstate"             -backend-config="use_azuread_auth=true"
+          terraform init -reconfigure -upgrade -input=false \
+            -backend-config="resource_group_name=env-rg" \
+            -backend-config="storage_account_name=calabashtfstate" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=afemailjs/terraform.tfstate" \
+            -backend-config="use_azuread_auth=true"
 
-      # For fork PRs (no secrets), do a backendless init so validate still runs
-      - name: Terraform init (no backend) for fork PRs
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-        working-directory: ${{ env.WORKING_DIR }}
-        run: terraform init -backend=false -reconfigure -upgrade -input=false
-
-      - name: Terraform validate
+      - name: Terraform validate [non-PR]
+        if: github.event_name != 'pull_request'
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform validate
 
-      # Run plan when backend is initialized (same-repo PRs and main)
-      - name: Terraform plan (speculative)
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+      - name: Terraform plan (speculative) [non-PR]
+        if: github.event_name != 'pull_request'
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform plan -no-color -input=false
 
-      # Apply only on push to main (never on PRs)
-      - name: Terraform apply
+      - name: Terraform apply [push->main only]
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform apply -auto-approve -input=false
