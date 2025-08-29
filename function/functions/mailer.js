@@ -13,6 +13,8 @@ const ENV = {
   PRIVATE_KEY: (process.env.EMAILJS_PRIVATE_KEY || "").trim() || undefined,
 };
 
+const publicKey = ENV.PUBLIC_KEY;
+
 // ---------- Helpers ----------
 function requireEmailJsOrThrow() {
   const missing = [];
@@ -148,6 +150,8 @@ app.http("mailer", {
         accessToken: privateKey, // optional
         template_params: templateParams,
       };
+
+      
       const headersObj = {
         "Content-Type": "application/json",
         ...(privateKey ? { Authorization: `Bearer ${privateKey}` } : {}),
