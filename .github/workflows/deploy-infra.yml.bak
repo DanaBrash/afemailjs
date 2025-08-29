@@ -1,0 +1,101 @@
+name: Terraform (infra)
+
+on:
+  # Apply only after merge to main
+  push:
+    branches: [ "main" ]
+    paths:
+      - "infra/**"
+      - ".github/workflows/deploy-infra.yml"
+  # PRs run fmt/validate only (no Azure login)
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "infra/**"
+      - ".github/workflows/deploy-infra.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: infra-terraform
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: 'true'
+  WORKING_DIR: 'infra'
+
+jobs:
+  validate:
+    # PR-only job: no Azure login to avoid AADSTS700213
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Terraform fmt
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform fmt -check
+
+      - name: Clean TF cache
+        run: rm -rf "${{ env.WORKING_DIR }}/.terraform" "${{ env.WORKING_DIR }}/.terraform.lock.hcl"
+
+      # Validate without hitting remote backend (works offline on PRs)
+      - name: Terraform init (no backend)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init -backend=false -reconfigure -upgrade
+
+      - name: Terraform validate
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform validate
+
+      - name: Terraform plan (speculative)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform plan -no-color -input=false
+
+  apply:
+    # Only apply on push to main
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC via tf-deployer)
+        uses: azure/login@v2
+        with:
+          client-id:   "bdbc6bec-6f3d-48b9-99e9-6bbcc0ef51f5"        # ${{ secrets.AZURE_CLIENT_ID }}  tf-deployer app (client) ID 
+          tenant-id:   "6dd7381d-4ace-410a-b7f3-011a192ebe60"        # ${{ secrets.AZURE_TENANT_ID }}  your tenant ID
+          subscription-id:  "c1b1f12b-41c7-4fb3-b5ac-02e36ce1331e"   # ${{ secrets.AZURE_SUBSCRIPTION_ID }}  your subscription ID
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.x
+
+      - name: Terraform fmt (auto)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform fmt -recursive
+
+      - name: Terraform fmt (check)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform fmt -check -recursive -diff
+
+      - name: Clean TF cache
+        run: rm -rf "${{ env.WORKING_DIR }}/.terraform" "${{ env.WORKING_DIR }}/.terraform.lock.hcl"
+
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init -reconfigure -upgrade -input=false
+
+      - name: Terraform Apply
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform apply -auto-approve -input=false
